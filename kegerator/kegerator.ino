@@ -20,10 +20,11 @@
 
 MFRC522 reader(SS_PIN, RST_PIN);
 
+/**
+  * Routine to setup the PCD (RFID Reader)
+  */
 void rfid_setup () {
-  SPI.begin();
   reader.PCD_Init();
-  reader.PCD_DumpVersionToSerial();
 }
 
 //---------------------------------
@@ -37,18 +38,18 @@ Adafruit_SSD1306 display(OLED_RESET);
 #error("Height incorrect, please fix Adafruit_SSD1306.h!");
 #endif
 
+/**
+  * Routine to setup the Physical OLED display
+  * The basic setting is:
+  *   - Font size '1'
+  *   - Color is 'WHITE'
+  */
 void oled_setup () {
   display.begin();
 
+  // Config
   display.setTextSize(1);
   display.setTextColor(WHITE);
-}
-
-void display_header() {
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.print("TEMP: 32C");
-  display.display();
 }
 
 //---------------------------------
@@ -112,7 +113,7 @@ int8_t lookupCard (byte uid[]) {
 
   for (int8_t i = 0; i < cardList.size; i++) {
     if (idMatches(cardList.cards[i].uid, uid)) {
-      found = i; 
+      found = i;
     }
   }
 
@@ -129,8 +130,6 @@ void saveCard (CardData data) {
   cardList.size++;
 }
 
-
-
 //---------------------------------
 // MAIN ROUTINES
 //---------------------------------
@@ -138,46 +137,123 @@ void saveCard (CardData data) {
 // The UID of a card is 4 bytes long or 32bits
 byte readCard[4];
 
+/**
+  * Display information on every state (i.e., Temperature)
+  */
+void showHeader() {
+  display.setCursor(0, 0);
+  display.println("Temp 32C");
+}
+
+//------------------------------
+// STATE VIEWS
+//------------------------------
+enum ViewState {
+  INITIAL,        // SHOW_USER | SECOND_CARD
+  SHOW_USER,      // POUR | INITIAL
+  POUR,           // INITIAL
+  SECOND_CARD,    // MANAGE (master) | MANAGE (new card)
+  MANAGE,         // CONFIRM (delete) | TOKAN_UPDATE
+  CONFIRM,        // POUR (if from initial) | INITIAL
+  TOKEN_UPDATE    // CONFIRM (update)
+};
+
+// What we are going to use to keep track of our current state
+ViewState current_state = INITIAL;
+
+void showInitial () {
+  // Looking for an RFID card
+  display.println("");
+  display.print("Waiting for card...");
+}
+
+void showPour () {
+  display.println("");
+  display.println("Pouring Your Drink!");
+}
+
+void showWaitForSecondCard() {
+  display.println("Detected Master Card:");
+  display.println("Scan Another Card");
+  display.println("G: Manage | R: Cancel");
+}
+
+void showManageCard() {
+  display.println("Card Mamagement:");
+  display.println("G: tokens | R: delete");
+  display.println("B: Cancel");
+}
+
+void showUser() {
+  display.println("You have X tokens");
+  display.println("Do you want to use one?");
+  display.println("G: Yes | R: No");
+}
+
+void showConfirmation() {
+  display.println("Are you sure?");
+  display.println("G: Yes | R: No");
+}
+
+void showTokenUpdate() {
+  display.println("How many tokens?");
+  display.println("      1         ");
+  display.println("G: Up | R: Dn | B: OK");
+}
+
+/**
+  * Use to render the current state of the app
+  * based off of the 'curren_state'
+  *
+  * TODO: Could be ecapsulated better
+  */
+void renderView() {
+  display.clearDisplay();
+  showHeader();
+  switch(current_state){
+    case INITIAL:
+      showInitial();
+      break;
+    case POUR:
+      showPour();
+      break;
+    case SECOND_CARD:
+      showWaitForSecondCard();
+      break;
+    case MANAGE:
+      showManageCard();
+      break;
+    case CONFIRM:
+      showConfirmation();
+      break;
+    case TOKEN_UPDATE:
+      showTokenUpdate();
+      break;
+    default:
+      showInitial();
+  }
+  display.display();
+}
+
+void collectActions() {
+
+}
+
 void setup () {
   Serial.begin(9600);
-
-  setup_buttons();
-
-  // Initialize the display
-  oled_setup();
+  SPI.begin();
 
   // Initialize the reader
   rfid_setup();
 
-  // Looking for an RFID card
-  display.clearDisplay();
-  display.setCursor(0, 10);
-  display.print("Waiting for card...");
-  display.display();
+  // Initialize the display
+  oled_setup();
 }
 
 void loop () {
-  if (! reader.PICC_IsNewCardPresent()) {
-    return;
-  }
+  renderView();
 
-  if (! reader.PICC_ReadCardSerial()) {
-    return;
-  }
+  current_state = current_state + 1;
 
-  // Read the UID from the read card
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("Scanned PICC UID:");
-
-  // Copy the 4 bytes of the id into local mem
-  for (uint8_t i = 0; i < 4; i++) {
-    readCard[i] = reader.uid.uidByte[i];
-    display.print(readCard[i], HEX);
-    display.print(" ");
-  }
-  display.println("");
-  display.display();
-
-  reader.PICC_HaltA(); // We are done reading the info from the card
+  delay(3000);
 }
